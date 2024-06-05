@@ -1,22 +1,15 @@
-# Python script that tries to match the song filename to the .lrc filename that are close but not exact matches. Also cleans up the original song filename to a standard format.
-# Things to remove from original filename: any mix of alphanumerics within square brackets, ex: [as238] or any explicit rating, ex: [E] or [e] only. Wont remove any other square brackets, e: [feat.], [remix], [live], [acoustic], etc.
-# Once the original filename is cleaned up, compare it to the .lrc filename and find the closest match.
-# Ask for comfirmation before renaming the original song filenames to the cleaned up song filenames by showing the original and cleaned up filenames side by side.
-# Steps taken to compare names:
-# Find artist name by finding the repeating words in only the song filename and not the .lrc filename.
-# Ignore the artist name and compare the rest of the song filename to the .lrc filename.
-# If track numbers are present in both filenames, compare them in addition to the rest of the filename.
-# Once the comparison is done, ask for confirmation before renaming the files.
-
 import os
 import re
 import difflib
+import string
 import argparse
 
+# Song filename editing options
 keep_punctuation = True
 keep_tagging = True  # Square brackets with explicit ratings, ex: [E] or [e] or any mix of alphanumerics, ex: [as238]
 
 
+# Function to print colored diff for output
 def print_colored_diff(old_name, new_name):
     diff = difflib.ndiff(old_name, new_name)
     result = ''
@@ -30,6 +23,7 @@ def print_colored_diff(old_name, new_name):
     return result
 
 
+# Class to store colors for terminal output
 class Colors:
     RED = '\033[31m'
     GREEN = '\033[32m'
@@ -67,36 +61,37 @@ def clean_song_filename(song_filename):
     return song_filename
 
 
-# Function to find the artist name
+# Function to find the artist name for better comparison
 def find_artist_name(songlist):
-    word_map = {}
+    words_in_all_files = set()
     for song in songlist:
         words = song.split()
         for word in words:
-            if word in word_map:
-                word_map[word] += 1
-            else:
-                word_map[word] = 1
-    common_words = {word for word, count in word_map.items() if count == len(songlist)}
+            matches = [difflib.get_close_matches(word, other_song.split(), n=1, cutoff=1.0) for other_song in songlist
+                       if other_song != song]
+            if all(matches):
+                words_in_all_files.add(word)
+
     longest_sequence = ''
     for song in songlist:
         words = song.split()
         current_sequence = ''
         for i in range(len(words) - 1):
-            if words[i] in common_words and words[i + 1] in common_words:
+            if words[i] in words_in_all_files and words[i + 1] in words_in_all_files:
                 current_sequence += ' ' + words[i]
             else:
                 if len(current_sequence) > len(longest_sequence):
                     longest_sequence = current_sequence
                 current_sequence = ''
         # Check for the last word in the song
-        if words[-1] in common_words:
+        if words[-1] in words_in_all_files:
             current_sequence += ' ' + words[-1]
         if len(current_sequence) > len(longest_sequence):
             longest_sequence = current_sequence
-    return longest_sequence.strip()
+    return longest_sequence.strip().strip(string.punctuation).strip()
 
 
+# Main function to compare song filenames to .lrc filenames
 def lyricizer(song_filenames, lrc_filenames, similarity_threshold, attempts, lyric_file_extension, auto_rename,
               directory):
     artist_name = find_artist_name(song_filenames)
@@ -178,15 +173,21 @@ def main():
     global keep_tagging
 
     parser = argparse.ArgumentParser(description='Lyricizer')
-    parser.add_argument('-s', '--similarity_threshold', type=float, default=0.71, help='Similarity threshold [0.1 to 1]')
-    parser.add_argument('-a', '--attempts', type=int, default=5, help='Number of attempts to keep lowering the threshold')
-    parser.add_argument('-l', '--lyric_file_extension', type=str, default='.lrc', help='Lyric file extension (ex: .lrc)')
-    parser.add_argument('-r', '--auto_rename', action='store_true', help='Auto rename without confirmation prompt')
-    parser.add_argument('-d', '--directory', type=str, default=os.getcwd(), help='Directory to work in (default: current working directory)')
+    parser.add_argument('-s', '--similarity_threshold', type=float, default=0.71,
+                        help='Similarity threshold [0.1 to 1]')
+    parser.add_argument('-a', '--attempts', type=int, default=5,
+                        help='Number of attempts to keep lowering the threshold')
+    parser.add_argument('-l', '--lyric_file_extension', type=str, default='.lrc',
+                        help='Lyric file extension (ex: .lrc)')
+    parser.add_argument('-r', '--auto_rename', action='store_true',
+                        help='Auto rename without confirmation prompt')
+    parser.add_argument('-d', '--directory', type=str, default=os.getcwd(),
+                        help='Directory to work in (default: current working directory)')
     parser.add_argument('-p', '--keep_punctuation', action='store_false', default=True,
                         help='Don\'t remove punctuation from song filenames (default: removes punctuation)')
     parser.add_argument('-t', '--keep_tagging', action='store_false', default=True,
-                        help='Don\'t remove explicit ratings / ripping artefacts from song filenames (ex: [E], [USL1276]) (default: removes tagging)')
+                        help='Don\'t remove explicit ratings / ripping artefacts from song filenames (ex: [E], '
+                             '[USL1276]) (default: removes tagging)')
 
     args = parser.parse_args()
 
